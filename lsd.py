@@ -15,7 +15,7 @@ from scipy.linalg import solve
 
 
 
-img = cv2.imread('data/id3.jpg')
+img = cv2.imread('data/bank7.jpg')
 img_=np.copy(img)
 
 grey = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
@@ -121,6 +121,29 @@ def line_coef(line):
             
     return rho,theta 
 
+def line_coef2(line):
+    pass
+
+
+def points_project_onto_line(line_coef,points):
+    """
+    line:[rho,theta] identify a unique line
+    points: shape[N,2]
+    
+    return :coord on 1 dim project-axis
+    """
+    
+    rho,theta=line_coef
+    R=np.array([[np.cos(0.5*np.pi-theta),-np.sin(0.5*np.pi-theta)],
+                 [np.sin(0.5*np.pi-theta),np.cos(0.5*np.pi-theta)]])
+    
+    new_xy=np.dot(points,R.T)
+    return new_xy[:,0]
+
+def union_length1d():
+    pass
+
+
 
 def farthest2points(points):
     """
@@ -148,7 +171,7 @@ def cluster(lines,coefs):
         
         flag=0
         for key in dic:
-            if abs(rho-key[0])<15 and abs(theta-key[1])<0.1:
+            if abs(rho-key[0])<4 and abs(theta-key[1])<0.01:
                 dic[key].append(i)
                 flag=1
                 new_key=coefs[dic[key]].mean(axis=0)
@@ -159,7 +182,7 @@ def cluster(lines,coefs):
             dic[(rho,theta)]=[i]
     return dic
 
-lsd = cv2.createLineSegmentDetector(cv2.LSD_REFINE_ADV,0.8,0.6,2.0,22.5,0,0.7,1024)
+lsd = cv2.createLineSegmentDetector(cv2.LSD_REFINE_NONE)
 
 # Detect lines in the image
 dlines = lsd.detect(img)#TODO 返回什么？
@@ -186,7 +209,7 @@ for key in dic:
 zippo = zip(dic2.values(),dic2.keys())
 zippo=sorted(zippo,reverse=True)
 
-straights=zippo[:6]
+straights=zippo[:0]
 straights=list(map(lambda x: x[1],straights))
 
 
@@ -208,5 +231,8 @@ for line in straights:
 
     cv2.line(drawn_img,(x1,y1),(x2,y2),(0,255,0),6)
     
-cv2.imshow('LSD',drawn_img)
-cv2.waitKey(0)
+#cv2.imshow('LSD',drawn_img)
+#cv2.waitKey(0)
+    
+#fig=plt.figure(figsize=[20,15])
+#plt.imshow(drawn_img)
