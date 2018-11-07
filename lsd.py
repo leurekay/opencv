@@ -13,7 +13,8 @@ from matplotlib import pyplot as plt
 from scipy.linalg import solve
 
 
-image_path='data/bank5.jpg'
+image_path='data/bank6.jpg'
+n_display=2
 
 img = cv2.imread(image_path)
 img_=np.copy(img)
@@ -204,19 +205,31 @@ def farthest2points(points):
     return ret
 
 
-def cluster(lines,coefs):
-    assert lines.shape[0]==coefs.shape[0]
-    dic={tuple(coefs[0]):[0]}
-    n_line=lines.shape[0]
+def cluster(lines_info):
+    """
+    lines_info:[N,7] 
+        e.g. [[x1,y1.x2,y2,rho,theta,length],
+              [............................]]
+        
+    return : dict {(rho,theta):[index1,index2...],...}
+    """
+   
+    n_line,n_feature=lines_info.shape
+    assert n_feature==7
+    dic={tuple(lines_info[0][4:6]):[0]}
     for i in range(1,n_line):
-        rho,theta=coefs[i]
+        line=lines_info[i][:4]
+        rho,theta,length=lines_info[i][4:7]
         
         flag=0
         for key in dic:
-            if abs(rho-key[0])<4 and abs(theta-key[1])<0.01:
+            if abs(rho-key[0])<20 and abs(theta-key[1])<0.01:
                 dic[key].append(i)
                 flag=1
-                new_key=coefs[dic[key]].mean(axis=0)
+                sub_lines_info=lines_info[dic[key]]
+                total_len=np.sum(sub_lines_info[:,6])
+                ratio_coef=np.apply_along_axis(lambda x : x[4:6]*x[6]/float(total_len),1,sub_lines_info)
+                new_key=ratio_coef.sum(axis=0)
                 dic[tuple(new_key)]=dic[key]
                 dic.pop(key)
                 break
@@ -245,18 +258,20 @@ lengths=np.apply_along_axis(lambda x:np.sqrt((x[0]-x[2])**2+(x[1]-x[3])**2),1,li
 lines_info=np.concatenate([lines,coefs,lengths],axis=1)
 
 #group lines into several clusters by their rho and theta
-dic=cluster(lines,coefs)
+dic=cluster(lines_info)
 
 
 
 dic2={}
 for key in dic:
-    dic2[key]=lengths[dic[key]].sum()
+    sub_lines=lines[dic[key]]
+    tot_len=total_project_length(np.array(key),sub_lines)
+    dic2[key]=tot_len
 
 zippo = zip(dic2.values(),dic2.keys())
 zippo=sorted(zippo,reverse=True)
 
-straights=zippo[:0]
+straights=zippo[:n_display]
 straights=list(map(lambda x: x[1],straights))
 
 
