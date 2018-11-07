@@ -13,8 +13,10 @@ from matplotlib import pyplot as plt
 from scipy.linalg import solve
 
 
-image_path='data/bank6.jpg'
-n_display=2
+image_path='data/bank5.jpg'
+n_display=0
+eps_rho=15
+eps_theta=0.08
 
 img = cv2.imread(image_path)
 img_=np.copy(img)
@@ -223,7 +225,7 @@ def cluster(lines_info):
         
         flag=0
         for key in dic:
-            if abs(rho-key[0])<20 and abs(theta-key[1])<0.01:
+            if abs(rho-key[0])<eps_rho and abs(theta-key[1])<eps_theta:
                 dic[key].append(i)
                 flag=1
                 sub_lines_info=lines_info[dic[key]]
@@ -294,10 +296,28 @@ for line in straights:
     x2 = int(x0 - 1000*(-b))
     y2 = int(y0 - 1000*(a))
 
-    cv2.line(drawn_img,(x1,y1),(x2,y2),(0,255,0),6)
-    
+    cv2.line(drawn_img,(x1,y1),(x2,y2),(0,255,0),4)
 #cv2.imshow('LSD',drawn_img)
 #cv2.waitKey(0)
     
+    
+    
+#test module
+test=np.array([200,200,150,100])
+t_coef=line_coef(test)
+rho,theta=t_coef
+a = np.cos(theta)
+b = np.sin(theta)
+x0 = a*rho
+y0 = b*rho
+x1 = int(x0 + 1000*(-b))
+y1 = int(y0 + 1000*(a))
+x2 = int(x0 - 1000*(-b))
+y2 = int(y0 - 1000*(a))
+cv2.line(drawn_img,(x1,y1),(x2,y2),(99,45,100),8)
+cv2.line(drawn_img,(test[0],test[1]),(test[2],test[3]),(0,145,100),3)
+
+
+
 fig=plt.figure(figsize=[20,15])
 plt.imshow(drawn_img)
