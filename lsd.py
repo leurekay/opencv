@@ -13,9 +13,9 @@ from matplotlib import pyplot as plt
 from scipy.linalg import solve
 
 
+image_path='data/bank5.jpg'
 
-
-img = cv2.imread('data/bank7.jpg')
+img = cv2.imread(image_path)
 img_=np.copy(img)
 
 grey = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
@@ -127,7 +127,7 @@ def line_coef2(line):
 
 def points_project_onto_line(line_coef,points):
     """
-    line:[rho,theta] identify a unique line
+    line_coef:[rho,theta] identify a unique line
     points: shape[N,2]
     
     return :coord on 1 dim project-axis
@@ -140,8 +140,50 @@ def points_project_onto_line(line_coef,points):
     new_xy=np.dot(points,R.T)
     return new_xy[:,0]
 
-def union_length1d():
-    pass
+
+
+
+
+def merge_interval(intervals):
+    """
+    :type intervals: numpyArray shape:[N,2]
+    :rtype: intervals after merged. [k,2] where k<=N
+    """
+    
+    
+    intervals=np.apply_along_axis(lambda x:[min(x),max(x)],1,intervals)
+    
+    n=len(intervals)
+    if n==0:
+        return []
+    intervals=sorted(intervals,key=lambda x : x[0])
+    box=[intervals[0]]
+    for i in range(1,n):
+        pre_s,pre_e=box[-1]
+        cur_s,cur_e=intervals[i]
+        if cur_s>pre_e:
+            box.append(intervals[i])
+        else:
+            box[-1]=([pre_s,max(pre_e,cur_e)])
+    return np.array(box)
+
+
+
+def total_project_length(line_coef,lines):
+    """
+    project every line-segment onto the fix straight line which 
+    described by rho and theta.
+    then, compute the total length of projected line segments
+    """
+    
+    
+    left=points_project_onto_line(line_coef,lines[:,:2]).reshape([-1,1])
+    right=points_project_onto_line(line_coef,lines[:,2:]).reshape([-1,1])
+    intervals=np.concatenate([left,right],axis=1)
+    merges=merge_interval(intervals)
+    length=np.apply_along_axis(lambda x:x[1]-x[0],1,merges)
+    tot_length=np.sum(length)
+    return tot_length
 
 
 
@@ -182,29 +224,34 @@ def cluster(lines,coefs):
             dic[(rho,theta)]=[i]
     return dic
 
-lsd = cv2.createLineSegmentDetector(cv2.LSD_REFINE_NONE)
 
-# Detect lines in the image
-dlines = lsd.detect(img)#TODO 返回什么？
+#detect all lines by LSD 
+lsd = cv2.createLineSegmentDetector(cv2.LSD_REFINE_NONE)
+dlines = lsd.detect(img)
 lines = lsd.detect(img)[0]  # Position 0 of the returned tuple are the detected lines
 lines=lines.reshape([-1,4])
 
-
-#filter  very short line
-filter_index=np.apply_along_axis(lambda x:(x[0]-x[2])**2+(x[1]-x[3])**2>30**2,1,lines)
+#filter  shorter lines
+filter_index=np.apply_along_axis(lambda x:(x[0]-x[2])**2+(x[1]-x[3])**2>20**2,1,lines)
 lines=lines[filter_index]
 
 #polar coeffient of the lines
 coefs=np.apply_along_axis(lambda x : np.array(list(line_coef(x))),1,lines)
 
-length=np.apply_along_axis(lambda x:np.sqrt((x[0]-x[2])**2+(x[1]-x[3])**2),1,lines)
+#corresponding length of each line-segement
+lengths=np.apply_along_axis(lambda x:np.sqrt((x[0]-x[2])**2+(x[1]-x[3])**2),1,lines).reshape([-1,1])
 
-#group lines into several clusters 
+#combine the line coordinates ,coefs ,lengths into a matrix
+lines_info=np.concatenate([lines,coefs,lengths],axis=1)
+
+#group lines into several clusters by their rho and theta
 dic=cluster(lines,coefs)
+
+
 
 dic2={}
 for key in dic:
-    dic2[key]=length[dic[key]].sum()
+    dic2[key]=lengths[dic[key]].sum()
 
 zippo = zip(dic2.values(),dic2.keys())
 zippo=sorted(zippo,reverse=True)
@@ -213,9 +260,12 @@ straights=zippo[:0]
 straights=list(map(lambda x: x[1],straights))
 
 
+
+
+
+
 # Draw detected lines in the image
 drawn_img = lsd.drawSegments(img, lines)
-
 
 
 for line in straights:
@@ -234,5 +284,5 @@ for line in straights:
 #cv2.imshow('LSD',drawn_img)
 #cv2.waitKey(0)
     
-#fig=plt.figure(figsize=[20,15])
-#plt.imshow(drawn_img)
+fig=plt.figure(figsize=[20,15])
+plt.imshow(drawn_img)
