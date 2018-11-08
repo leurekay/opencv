@@ -14,59 +14,16 @@ from scipy.linalg import solve
 
 
 image_path='data/bank5.jpg'
-n_display=1
+n_display=5
 eps_rho=20
 eps_theta=0.05
+threshold_filter=30
 
-img = cv2.imread(image_path)
-img_raw=np.copy(img)
+img_raw = cv2.imread(image_path)
+img_hsv = cv2.cvtColor(img_raw,cv2.COLOR_BGR2HSV)
 
-grey = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
-#img=cv2.GaussianBlur(grey,(5,5),4)
-img=grey
+img = cv2.cvtColor(img_raw,cv2.COLOR_BGR2GRAY)
 
-def hough_line(img,threh_hough):
-    
-    height,width=img.shape[0],img.shape[1]
-    edges = cv2.Canny(img,90,150)
-    lines = cv2.HoughLines(edges,1,np.pi/180,threh_hough)
-    lines=lines.reshape([-1,2])
-    n,_=lines.shape
-    
-    remove_list=[]
-    
-    box=[]
-    for i in range(n):
-        if i in remove_list:
-            continue
-        for j in range(i+1,n):
-            if j in remove_list:
-                continue
-            rho1,theta1=lines[i]
-            rho2,theta2=lines[j]
-            if abs(rho1-rho2)<50 and abs(theta1-theta2)<0.1:
-                remove_list.append(j)
-                continue
-            
-            a1,b1 = np.cos(theta1),np.sin(theta1)
-            a2,b2 = np.cos(theta2),np.sin(theta2)
-    
-            a = np.array([[a1,b1],[a2,b2]])
-            b = np.array([rho1,rho2])
-            
-            try:
-                x = solve(a, b)
-            except :
-                pass
-#                print ('================\n',a,b,'\n==============')
-            else:
-                if (x[0]>0 and x[0]<width) and (x[1]>0 and x[1]<height):
-                    box.append(x)
-    box=np.array(box)
-#    print (box)
-    
-    index_line=[x for x in range(n) if x not in remove_list]
-    return lines[index_line],box
 
 
 def clockwise_sort(X):
@@ -247,11 +204,21 @@ def cluster(lines_info):
             dic[(rho,theta)]=[i]
     return dic
 
+def mass_center_of_lines(lines):
+    masses=np.apply_along_axis(lambda x:np.sqrt((x[0]-x[2])**2+(x[1]-x[3])**2),1,lines).reshape([-1,1])
+    centers=np.apply_along_axis(lambda x:[(x[0]+x[2])/2.0,(x[1]+x[3])/2.0],1,lines)
+    mass=np.sum(masses)
+    center=np.dot(masses.T,centers)/mass
+    return center
+
+
 def render(img,lines,color=None,thick=None):
     drawn_img=np.copy(img)    
     lines=np.array(lines)
     shape=lines.shape
     if len(shape)==1:
+        if shape[0]==0:
+            return drawn_img
         lines=lines.reshape([1,-1])
     shape=lines.shape
     assert shape[1]==2 or shape[1]==4
@@ -262,10 +229,10 @@ def render(img,lines,color=None,thick=None):
             b = np.sin(theta)
             x0 = a*rho
             y0 = b*rho
-            x1 = int(x0 + 1000*(-b))
-            y1 = int(y0 + 1000*(a))
-            x2 = int(x0 - 1000*(-b))
-            y2 = int(y0 - 1000*(a))
+            x1 = int(x0 + 3000*(-b))
+            y1 = int(y0 + 3000*(a))
+            x2 = int(x0 - 3000*(-b))
+            y2 = int(y0 - 3000*(a))
             if color and thick:
                 cv2.line(drawn_img,(x1,y1),(x2,y2),color,thick)
             else:
@@ -280,6 +247,16 @@ def render(img,lines,color=None,thick=None):
     
 
 
+class PolarLine():
+    def __init__(self,base_coef,indexs,lines_info):
+        self.base_coef=base_coef
+        self.indexs=indexs
+        self.lines=lines_info[indexs,:4]
+        self.coefs=lines_info[indexs,4:6]
+        self.lengths=lines_info[indexs,6]
+    def mass_center(self):
+        self.center=mass_center_of_lines(self.lines)
+
 #detect all lines by LSD 
 lsd = cv2.createLineSegmentDetector(cv2.LSD_REFINE_NONE)
 dlines = lsd.detect(img)
@@ -287,7 +264,7 @@ lines = lsd.detect(img)[0]  # Position 0 of the returned tuple are the detected 
 lines=lines.reshape([-1,4])
 
 #filter  shorter lines
-filter_index=np.apply_along_axis(lambda x:(x[0]-x[2])**2+(x[1]-x[3])**2>20**2,1,lines)
+filter_index=np.apply_along_axis(lambda x:(x[0]-x[2])**2+(x[1]-x[3])**2>threshold_filter**2,1,lines)
 lines=lines[filter_index]
 
 #polar coeffient of the lines
@@ -316,10 +293,24 @@ zippo=sorted(zippo,reverse=True)
 straights=zippo[:n_display]
 straights=list(map(lambda x: x[1],straights))
 
-drawn_img=render(img_raw,lines)
-drawn_img=render(drawn_img,straights)
-drawn_img=render(drawn_img,[200,400,700,500],(100,100,100),5)
 
+
+
+#drawn_img=render(img_raw,lines)
+#drawn_img=render(drawn_img,straights)
+#drawn_img=render(drawn_img,[200,400,700,500],(100,100,100),5)
+colors=np.random.randint(40,255,[1000,3])
+drawn_img=img_raw
+for i,line in enumerate(lines):
+    color=(int(colors[i][0]),int(colors[i][1]),int(colors[i][2]))
+    drawn_img=render(drawn_img,line,color=color,thick=2)
+drawn_img=render(drawn_img,straights)
+
+
+p=PolarLine(zippo[3][1],dic[zippo[3][1]],lines_info)
+p.mass_center()
+cc=p.center
+cv2.circle(drawn_img,(int(cc[0][0]),int(cc[0][1])),25,(14,124,155),-1)
 
 '''
     
