@@ -14,12 +14,12 @@ from scipy.linalg import solve
 
 
 image_path='data/bank5.jpg'
-n_display=0
-eps_rho=15
-eps_theta=0.08
+n_display=1
+eps_rho=20
+eps_theta=0.05
 
 img = cv2.imread(image_path)
-img_=np.copy(img)
+img_raw=np.copy(img)
 
 grey = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
 #img=cv2.GaussianBlur(grey,(5,5),4)
@@ -98,7 +98,7 @@ def line_coef(line):
             return rho,theta 
         else:
             theta=np.pi
-            return rho,theta 
+            return abs(rho),theta 
     if y1==y2:
         rho=y1
         if y1>=0:
@@ -106,7 +106,7 @@ def line_coef(line):
             return rho,theta 
         else:
             theta=1.5*np.pi      
-            return rho,theta 
+            return abs(rho),theta 
     
     k=(y1-y2)/float(x1-x2)
     b=y1-k*x1
@@ -120,8 +120,16 @@ def line_coef(line):
     except :
         print ('777777777777777')
     
-    theta=np.arccos(x[0])
-            
+    cos,sin=x
+    theta1=np.arccos(cos)
+#    print (cos,sin,theta1)
+    theta2=2*np.pi-theta1
+    if abs(np.sin(theta1)-sin)<0.000001:
+        theta=theta1
+    if abs(np.sin(theta2)-sin)<0.000001:
+        theta=theta2
+
+
     return rho,theta 
 
 def line_coef2(line):
@@ -239,6 +247,38 @@ def cluster(lines_info):
             dic[(rho,theta)]=[i]
     return dic
 
+def render(img,lines,color=None,thick=None):
+    drawn_img=np.copy(img)    
+    lines=np.array(lines)
+    shape=lines.shape
+    if len(shape)==1:
+        lines=lines.reshape([1,-1])
+    shape=lines.shape
+    assert shape[1]==2 or shape[1]==4
+    if shape[1]==2:
+        for line in lines:
+            rho,theta=line
+            a = np.cos(theta)
+            b = np.sin(theta)
+            x0 = a*rho
+            y0 = b*rho
+            x1 = int(x0 + 1000*(-b))
+            y1 = int(y0 + 1000*(a))
+            x2 = int(x0 - 1000*(-b))
+            y2 = int(y0 - 1000*(a))
+            if color and thick:
+                cv2.line(drawn_img,(x1,y1),(x2,y2),color,thick)
+            else:
+                cv2.line(drawn_img,(x1,y1),(x2,y2),(0,255,0),4)       
+    if shape[1]==4:
+        if color and thick:
+            for x1,y1,x2,y2 in lines:
+                cv2.line(drawn_img,(x1,y1),(x2,y2),color,thick)
+        else:
+            drawn_img = lsd.drawSegments(drawn_img, lines)
+    return drawn_img
+    
+
 
 #detect all lines by LSD 
 lsd = cv2.createLineSegmentDetector(cv2.LSD_REFINE_NONE)
@@ -276,48 +316,29 @@ zippo=sorted(zippo,reverse=True)
 straights=zippo[:n_display]
 straights=list(map(lambda x: x[1],straights))
 
+drawn_img=render(img_raw,lines)
+drawn_img=render(drawn_img,straights)
+drawn_img=render(drawn_img,[200,400,700,500],(100,100,100),5)
 
 
-
-
-
-# Draw detected lines in the image
-drawn_img = lsd.drawSegments(img, lines)
-
-
-for line in straights:
-    rho,theta=line
-    a = np.cos(theta)
-    b = np.sin(theta)
-    x0 = a*rho
-    y0 = b*rho
-    x1 = int(x0 + 1000*(-b))
-    y1 = int(y0 + 1000*(a))
-    x2 = int(x0 - 1000*(-b))
-    y2 = int(y0 - 1000*(a))
-
-    cv2.line(drawn_img,(x1,y1),(x2,y2),(0,255,0),4)
-#cv2.imshow('LSD',drawn_img)
-#cv2.waitKey(0)
-    
-    
+'''
     
 #test module
-test=np.array([200,200,150,100])
-t_coef=line_coef(test)
-rho,theta=t_coef
-a = np.cos(theta)
-b = np.sin(theta)
-x0 = a*rho
-y0 = b*rho
-x1 = int(x0 + 1000*(-b))
-y1 = int(y0 + 1000*(a))
-x2 = int(x0 - 1000*(-b))
-y2 = int(y0 - 1000*(a))
-cv2.line(drawn_img,(x1,y1),(x2,y2),(99,45,100),8)
-cv2.line(drawn_img,(test[0],test[1]),(test[2],test[3]),(0,145,100),3)
+#test=np.array([200,200,180,70])
+#t_coef=line_coef(test)
+#rho,theta=t_coef
+#a = np.cos(theta)
+#b = np.sin(theta)
+#x0 = a*rho
+#y0 = b*rho
+#x1 = int(x0 + 10000*(-b))
+#y1 = int(y0 + 10000*(a))
+#x2 = int(x0 - 10000*(-b))
+#y2 = int(y0 - 10000*(a))
+#cv2.line(drawn_img,(x1,y1),(x2,y2),(99,45,100),8)
+#cv2.line(drawn_img,(test[0],test[1]),(test[2],test[3]),(0,145,100),3)
 
-
+'''
 
 fig=plt.figure(figsize=[20,15])
 plt.imshow(drawn_img)
