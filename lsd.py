@@ -209,7 +209,7 @@ def mass_center_of_lines(lines):
     centers=np.apply_along_axis(lambda x:[(x[0]+x[2])/2.0,(x[1]+x[3])/2.0],1,lines)
     mass=np.sum(masses)
     center=np.dot(masses.T,centers)/mass
-    return center
+    return center.reshape([1,-1])
 
 
 def render(img,lines,color=None,thick=None):
@@ -248,14 +248,36 @@ def render(img,lines,color=None,thick=None):
 
 
 class PolarLine():
-    def __init__(self,base_coef,indexs,lines_info):
-        self.base_coef=base_coef
+    def f(self):
+        return 6
+    def __init__(self,img,base_coef,indexs,lines_info):
+        self.img=img
+        self.shape=img.shape
+        self.base_coef=np.array(base_coef)
         self.indexs=indexs
         self.lines=lines_info[indexs,:4]
         self.coefs=lines_info[indexs,4:6]
         self.lengths=lines_info[indexs,6]
-    def mass_center(self):
+        self.len_project=total_project_length(self.base_coef,self.lines)
         self.center=mass_center_of_lines(self.lines)
+    def sample(self,n):
+        w,h,_=self.shape
+        box=[]
+        count=0
+        while count<n:
+            point=np.random.normal(loc=list(self.center),scale=[10,10],size=[1,2])
+            if point[0][0]>0 and point[0][0]<w and point[0][1]>0 and point[0][1]<h:
+                box.append(point)
+                count+=1
+        return np.concatenate(box,axis=0)
+    
+    def hsv(self,n):
+        pass
+    
+    def get(self):
+        return self.f()
+
+    
 
 #detect all lines by LSD 
 lsd = cv2.createLineSegmentDetector(cv2.LSD_REFINE_NONE)
@@ -279,38 +301,31 @@ lines_info=np.concatenate([lines,coefs,lengths],axis=1)
 #group lines into several clusters by their rho and theta
 dic=cluster(lines_info)
 
+base_coef_set=[PolarLine(img_hsv,key,dic[key],lines_info) for key in dic.keys()]
+base_coef_set=sorted(base_coef_set,key=lambda x:x.len_project,reverse=True)
+base_coef_set=base_coef_set[:n_display]
 
-
-dic2={}
-for key in dic:
-    sub_lines=lines[dic[key]]
-    tot_len=total_project_length(np.array(key),sub_lines)
-    dic2[key]=tot_len
-
-zippo = zip(dic2.values(),dic2.keys())
-zippo=sorted(zippo,reverse=True)
-
-straights=zippo[:n_display]
-straights=list(map(lambda x: x[1],straights))
+straights=list(map(lambda x: x.base_coef,base_coef_set))
 
 
 
 
-#drawn_img=render(img_raw,lines)
-#drawn_img=render(drawn_img,straights)
-#drawn_img=render(drawn_img,[200,400,700,500],(100,100,100),5)
-colors=np.random.randint(40,255,[1000,3])
-drawn_img=img_raw
-for i,line in enumerate(lines):
-    color=(int(colors[i][0]),int(colors[i][1]),int(colors[i][2]))
-    drawn_img=render(drawn_img,line,color=color,thick=2)
+drawn_img=render(img_raw,lines)
 drawn_img=render(drawn_img,straights)
+#drawn_img=render(drawn_img,[200,400,700,500],(100,100,100),5)
+
+#colors=np.random.randint(40,255,[1000,3])
+#drawn_img=img_raw
+#for i,line in enumerate(lines):
+#    color=(int(colors[i][0]),int(colors[i][1]),int(colors[i][2]))
+#    drawn_img=render(drawn_img,line,color=color,thick=2)
+#drawn_img=render(drawn_img,straights)
 
 
-p=PolarLine(zippo[3][1],dic[zippo[3][1]],lines_info)
-p.mass_center()
-cc=p.center
-cv2.circle(drawn_img,(int(cc[0][0]),int(cc[0][1])),25,(14,124,155),-1)
+#p=PolarLine(zippo[3][1],dic[zippo[3][1]],lines_info)
+#p.mass_center()
+#cc=p.center
+#cv2.circle(drawn_img,(int(cc[0][0]),int(cc[0][1])),25,(14,124,155),-1)
 
 '''
     
