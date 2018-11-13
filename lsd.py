@@ -244,7 +244,63 @@ def render(img,lines,color=None,thick=None):
         else:
             drawn_img = lsd.drawSegments(drawn_img, lines)
     return drawn_img
+  
+def combination(n, k):
+    """
+    :type n: int
+    :type k: int
+    :rtype: List[List[int]]
+    """
+    box=[]
+    def dfs(a):
+        if len(a)==k:
+            box.append(a)
+        else:
+            if len(a)==0:
+                s=1
+            else:
+                s=a[-1]+1
+            for v in range(s,n+1):
+                dfs(a+[v])
     
+    dfs([])
+    return box
+
+def permutation(n,k):
+    box=[]
+    def dfs(a):
+        if len(a)==k:
+            box.append(a)
+        else:
+            for v in range(1,n+1):
+                if v not in a:
+                    dfs(a+[v])
+    
+    dfs([])
+    return box
+        
+
+def crosspoint_matrix(lines):
+    n=len(lines)
+    M=np.zeros([n,n,2])
+    for i in range(n):
+        for j in range(i+1,n):
+            rho1,theta1=lines[i]
+            rho2,theta2=lines[j]
+            a1,b1 = np.cos(theta1),np.sin(theta1)
+            a2,b2 = np.cos(theta2),np.sin(theta2)
+    
+            a = np.array([[a1,b1],[a2,b2]])
+            b = np.array([rho1,rho2])
+            
+            try:
+                x = solve(a, b)
+            except :
+                M[i,j,:]=M[j,i,:]=-1
+#                print ('================\n',a,b,'\n==============')
+            else:
+                M[i,j,:]=M[j,i,:]=x        
+    return M
 
 
 class PolarLine():
@@ -276,6 +332,8 @@ class PolarLine():
     
     def get(self):
         return self.f()
+
+
 
     
 
@@ -327,24 +385,11 @@ drawn_img=render(drawn_img,straights)
 #cc=p.center
 #cv2.circle(drawn_img,(int(cc[0][0]),int(cc[0][1])),25,(14,124,155),-1)
 
-'''
-    
-#test module
-#test=np.array([200,200,180,70])
-#t_coef=line_coef(test)
-#rho,theta=t_coef
-#a = np.cos(theta)
-#b = np.sin(theta)
-#x0 = a*rho
-#y0 = b*rho
-#x1 = int(x0 + 10000*(-b))
-#y1 = int(y0 + 10000*(a))
-#x2 = int(x0 - 10000*(-b))
-#y2 = int(y0 - 10000*(a))
-#cv2.line(drawn_img,(x1,y1),(x2,y2),(99,45,100),8)
-#cv2.line(drawn_img,(test[0],test[1]),(test[2],test[3]),(0,145,100),3)
 
-'''
 
 fig=plt.figure(figsize=[20,15])
 plt.imshow(drawn_img)
+
+pp=permutation(8,4)
+cc=combination(8,4)
+M=crosspoint_matrix(straights)
