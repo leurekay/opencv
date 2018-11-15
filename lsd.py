@@ -45,6 +45,9 @@ def clockwise_sort(X):
 def line_coef(line):
     line=np.array(line).reshape([4,])
     x1,y1,x2,y2=line
+    if x1*y2==x2*y1:
+        y1+=0.00001 #Avoid straight line crossing the origin
+    
     if x1==x2:
         rho=x1
         if x1>=0:
@@ -72,15 +75,14 @@ def line_coef(line):
     try:
         x = solve(A,b)
     except :
-        print ('777777777777777')
+        print ('the matrix is singular!')
     
     cos,sin=x
     theta1=np.arccos(cos)
-#    print (cos,sin,theta1)
     theta2=2*np.pi-theta1
-    if abs(np.sin(theta1)-sin)<0.000001:
+    if abs(np.sin(theta1)-sin)<0.00001:
         theta=theta1
-    if abs(np.sin(theta2)-sin)<0.000001:
+    if abs(np.sin(theta2)-sin)<0.00001:
         theta=theta2
 
 
@@ -150,6 +152,24 @@ def total_project_length(line_coef,lines):
     tot_length=np.sum(length)
     return tot_length
 
+
+def total_project_length_onto_linSegement(lineSegement,lines):
+    coef=line_coef(lineSegement)
+    base_left=points_project_onto_line(coef,line_segement[:,:2]).reshape([-1,1])
+    base_right=points_project_onto_line(coef,line_segement[:,2:]).reshape([-1,1])
+    base=np.concatenate([base_left,base_right],axis=1)
+    x,y=base[0]
+    
+    
+    left=points_project_onto_line(coef,lines[:,:2]).reshape([-1,1])
+    right=points_project_onto_line(coef,lines[:,2:]).reshape([-1,1])
+    intervals=np.concatenate([left,right],axis=1)
+    merges=merge_interval(intervals)
+    tot=0
+    for interval in merges:
+        a,b=interval
+        tot+=max(min(b,y)-max(a,x),0)
+    return tot
 
 
 def farthest2points(points):
@@ -550,8 +570,13 @@ class Quadrangle():
         self.n=points.shape[0]
         self.points=points
         self.lineSegements=points2lineSegements(points)
-        self.area=self.get_area()
+        self.lineSegementsLength=np.apply_along_axis(lambda x:np.linalg.norm(x[[0,1]]-x[[2,3]]),1,self.lineSegements)
         self.angles=self.get_angles()
+        self.ratios=self.get_ratio()
+        
+        self.feature=feature=np.array([x/(np.pi/2) for x in self.angles]+self.ratios)
+        self.standard=standard=np.array([1.0,1.0,1.0,1.0,54/85.6,54/85.6,1.0,1.0])
+        self.similarity=np.dot(feature,standard)/float(np.linalg.norm(feature)*np.linalg.norm(standard))
         
     def get_area(self):
         s1=triangleArea(self.points[[0,1,2]])
@@ -565,10 +590,14 @@ class Quadrangle():
             e2=self.points[(i+1)%self.n]
             v1=e1-s
             v2=e2-s
-            cos=np.dot(v1,v2)/float(np.linalg.norm(v1)*np.linalg.norm(v1))
+            cos=np.dot(v1,v2)/float(np.linalg.norm(v1)*np.linalg.norm(v2))
             theta=np.arccos(cos)
             box.append(theta)
         return box
+    def get_ratio(self):
+        lengths=self.lineSegementsLength
+        lengths=sorted(lengths)
+        return [lengths[0]/float(lengths[3]),lengths[1]/float(lengths[3]),lengths[2]/float(lengths[3]),1.0]
             
     
 
@@ -576,11 +605,16 @@ class Quadrangle():
 
 
 if __name__=='__main__':
-    image_path='data/bank5.jpg'
+    image_path='data/bank2.jpg'
 
     img_raw = cv2.imread(image_path)
     img_hsv = cv2.cvtColor(img_raw,cv2.COLOR_BGR2HSV)
     img = cv2.cvtColor(img_raw,cv2.COLOR_BGR2GRAY)
+    
+    lsd = cv2.createLineSegmentDetector(cv2.LSD_REFINE_NONE)
+#    dlines = lsd.detect(img)
+    lines = lsd.detect(img)[0]  # Position 0 of the returned tuple are the detected lines
+    lines=lines.reshape([-1,4])
     
     straights=find_more_edge(img_raw)
 
@@ -601,19 +635,29 @@ if __name__=='__main__':
     nsides_box2=list(map(lambda x:points2lineSegements(x),nsides_box))
     
     
-    vv=isConvexPolygon([[10,10],[30,10],[10,30],[30,30]])
-    
-    
+    quad_box=[Quadrangle(points) for points in nsides_box]
+        
+    quad_box=sorted(quad_box,key=lambda x:x.similarity,reverse=True)
     
     
     drawn_img=img_raw
-    for ooxx in nsides_box2:
-        drawn_img=render(drawn_img,ooxx,(np.random.randint(0,1),np.random.randint(100,201),np.random.randint(0,200)),3)  
-#    drawn_img=render_point(drawn_img,nsides_box[0])
+#    for ooxx in nsides_box2:
+#        drawn_img=render(drawn_img,ooxx,(np.random.randint(0,1),np.random.randint(100,201),np.random.randint(0,200)),3)  
+    
+#    drawn_img=render(drawn_img,nsides_box2[2],(np.random.randint(0,1),np.random.randint(100,201),np.random.randint(0,200)),3)  
+    
+#    drawn_img=render(drawn_img,straights,(np.random.randint(100,101),np.random.randint(0,1),np.random.randint(199,200)),2)  
+    
+    drawn_img=render(drawn_img,quad_box[0].lineSegements,(np.random.randint(0,1),np.random.randint(100,201),np.random.randint(0,200)),3)  
+   
     
     fig=plt.figure(figsize=[20,15])
     plt.imshow(drawn_img)
     
     
     quad1=Quadrangle(nsides_box[0])
+    
+    line_segement=np.array([[10,10,40,40]])
+    lines=np.array([[5,7,20,30],[35,20,70,50]])
+    project_length=total_project_length_onto_linSegement(line_segement,lines)
     
