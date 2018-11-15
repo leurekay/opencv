@@ -13,7 +13,7 @@ from matplotlib import pyplot as plt
 from scipy.linalg import solve
 
 
-n_first=8
+n_first=7
 n_second=6
 eps_rho=20
 eps_theta=0.05
@@ -95,7 +95,7 @@ def points_project_onto_line(line_coef,points):
     line_coef:[rho,theta] identify a unique line
     points: shape[N,2]
     
-    return :coord on 1 dim project-axis
+    return :coord on 1 dim projected-axis
     """
     
     rho,theta=line_coef
@@ -416,6 +416,15 @@ def points2lineSegements(points):
     return ret
 
 
+def triangleArea(points):
+    points=np.array(points)
+    assert points.shape[0]==3 and points.shape[1]==2
+    a=np.linalg.norm(points[0]-points[1])
+    b=np.linalg.norm(points[1]-points[2])
+    c=np.linalg.norm(points[2]-points[0])
+    p=(a+b+c)/2.0
+    s=np.sqrt(a*b*c*p)
+    return s
 
 def get_calibration(img):
     straights=find_more_edge(img)
@@ -490,10 +499,6 @@ class PolarLine():
         cos=np.dot(neg_fatures,pos_fatures)/(np.linalg.norm(neg_fatures)*np.linalg.norm(pos_fatures))
         self.similarity=cos
         return cos
-        
-        
-        
-        
     
     def hsv(self,n):
         points_neg,points_pos=self.sample_select(n)
@@ -539,8 +544,39 @@ def find_more_edge(img_raw):
     return straights
 
 
+class Quadrangle():
+    def __init__(self,points):
+        assert points.shape[0]==4 and points.shape[1]==2
+        self.n=points.shape[0]
+        self.points=points
+        self.lineSegements=points2lineSegements(points)
+        self.area=self.get_area()
+        self.angles=self.get_angles()
+        
+    def get_area(self):
+        s1=triangleArea(self.points[[0,1,2]])
+        s2=triangleArea(self.points[[0,2,3]])
+        return s1+s2
+    def get_angles(self):
+        box=[]
+        for i in range(self.n):
+            s=self.points[i]
+            e1=self.points[(i-1)%self.n]
+            e2=self.points[(i+1)%self.n]
+            v1=e1-s
+            v2=e2-s
+            cos=np.dot(v1,v2)/float(np.linalg.norm(v1)*np.linalg.norm(v1))
+            theta=np.arccos(cos)
+            box.append(theta)
+        return box
+            
+    
+
+
+
+
 if __name__=='__main__':
-    image_path='data/bank2.jpg'
+    image_path='data/bank5.jpg'
 
     img_raw = cv2.imread(image_path)
     img_hsv = cv2.cvtColor(img_raw,cv2.COLOR_BGR2HSV)
@@ -572,11 +608,12 @@ if __name__=='__main__':
     
     drawn_img=img_raw
     for ooxx in nsides_box2:
-        drawn_img=render(drawn_img,ooxx,(np.random.randint(0,1),np.random.randint(200,201),np.random.randint(0,1)),5)
-#    drawn_img=render_point(drawn_img,crosspoints)
-    
+        drawn_img=render(drawn_img,ooxx,(np.random.randint(0,1),np.random.randint(100,201),np.random.randint(0,200)),3)  
 #    drawn_img=render_point(drawn_img,nsides_box[0])
     
     fig=plt.figure(figsize=[20,15])
     plt.imshow(drawn_img)
+    
+    
+    quad1=Quadrangle(nsides_box[0])
     
