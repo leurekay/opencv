@@ -398,6 +398,8 @@ def isConvexPolygon(sorted_points):
         det=np.linalg.det(V)
         if abs(det-0)<1e-9:
             return False
+        if det<0:
+            return False
         dets.append(det>0)
     sets=set(dets)
     if len(sets)==1:
@@ -465,11 +467,93 @@ def triangleArea(points):
     s=np.sqrt((p-a)*(p-b)*(p-c)*p)
     return s
 
-def get_calibration(img):
-    straights=find_more_edge(img)
-    drawn_img=img
-    drawn_img=render(drawn_img,straights)
-    return drawn_img
+
+
+
+
+
+    
+def find_more_edge(img_raw):
+    img_hsv = cv2.cvtColor(img_raw,cv2.COLOR_BGR2HSV)
+    img = cv2.cvtColor(img_raw,cv2.COLOR_BGR2GRAY)    
+    
+
+    #detect all lines by LSD 
+    lsd = cv2.createLineSegmentDetector(cv2.LSD_REFINE_NONE)
+#    dlines = lsd.detect(img)
+    lines = lsd.detect(img)[0]  # Position 0 of the returned tuple are the detected lines
+    lines=lines.reshape([-1,4])
+    
+    #filter  shorter lines
+    filter_index=np.apply_along_axis(lambda x:(x[0]-x[2])**2+(x[1]-x[3])**2>threshold_filter**2,1,lines)
+    lines=lines[filter_index]
+    
+    #polar coeffient of the lines
+    coefs=np.apply_along_axis(lambda x : np.array(list(line_coef(x))),1,lines)
+    
+    #corresponding length of each line-segement
+    lengths=np.apply_along_axis(lambda x:np.sqrt((x[0]-x[2])**2+(x[1]-x[3])**2),1,lines).reshape([-1,1])
+    
+    #combine the line coordinates ,coefs ,lengths into a matrix
+    lines_info=np.concatenate([lines,coefs,lengths],axis=1)
+    
+    #group lines into several clusters by their rho and theta
+    dic=cluster(lines_info)
+    dic_clusterLines={}
+    for key in dic.keys():
+        dic_clusterLines[key]=lines[dic[key]]
+    
+    base_coef_set=[PolarLine(img_hsv,key,dic[key],lines_info) for key in dic.keys()]
+    base_coef_set=sorted(base_coef_set,key=lambda x:x.len_project,reverse=True)
+    base_coef_set=base_coef_set[:n_first]
+    
+    straights=list(map(lambda x: x.base_coef,base_coef_set))
+    return straights,dic_clusterLines
+
+def card_connerPoints(img_raw):
+    straights,dic=find_more_edge(img_raw)
+
+    h,w,_=img_raw.shape
+    area_img=h*w
+    nsides_box=find_kSide_from_nLine(straights,4,[0,0,w,h]) 
+    quad_box=[Quadrangle(points,dic) for points in nsides_box]
+    quad_box=sorted(quad_box,key=lambda x:x.ratioPerimeter,reverse=True)
+    quad_box=list(filter(lambda x:x.area/float(area_img)>area_ratio,quad_box))
+    if quad_box:
+        return quad_box[0].points
+    else:
+        return np.array([])
+    
+def align_points(src_pts,dst_pts):
+    '''
+    src_pts and dst_pts are dis-aligned,
+    and both are clock-wise.
+    
+    we want to align them
+    '''
+    dst_flatten=dst_pts.flatten()
+    order_box=[src_pts[[0,1,2,3]],src_pts[[1,2,3,0]],src_pts[[2,3,0,1]],src_pts[[3,0,1,2]]]
+    max_value=-999
+    index=-1
+    for i,src in enumerate(order_box):
+        src_flatten=src.flatten()
+        cos=np.dot(src_flatten,dst_flatten)/float(np.linalg.norm(src_flatten)*np.linalg.norm(dst_flatten))
+        if cos>max_value:
+            max_value=cos
+            index=i
+    valid_src_pts=order_box[index]
+    return valid_src_pts
+
+def get_calibration(img_raw):
+    cornerPoints=card_connerPoints(img_raw)
+    if len(cornerPoints)==0:
+        return np.array([])
+    dst_points=np.array([[0,0],[856,0],[856,540],[0,540]]).astype('float32')
+    cornerPoints=align_points(cornerPoints,dst_points)
+    M = cv2.getPerspectiveTransform(cornerPoints.astype('float32'),dst_points)
+    dst = cv2.warpPerspective(img_raw,M,(856,540))
+    return dst
+
 
 
 class PolarLine():
@@ -547,46 +631,7 @@ class PolarLine():
         mean_pos=np.mean(hsv_pos,axis=0)
         return mean_neg,mean_pos
 
-    
-def find_more_edge(img_raw):
-    img_hsv = cv2.cvtColor(img_raw,cv2.COLOR_BGR2HSV)
-    img = cv2.cvtColor(img_raw,cv2.COLOR_BGR2GRAY)    
-    
 
-    #detect all lines by LSD 
-    lsd = cv2.createLineSegmentDetector(cv2.LSD_REFINE_NONE)
-#    dlines = lsd.detect(img)
-    lines = lsd.detect(img)[0]  # Position 0 of the returned tuple are the detected lines
-    lines=lines.reshape([-1,4])
-    
-    #filter  shorter lines
-    filter_index=np.apply_along_axis(lambda x:(x[0]-x[2])**2+(x[1]-x[3])**2>threshold_filter**2,1,lines)
-    lines=lines[filter_index]
-    
-    #polar coeffient of the lines
-    coefs=np.apply_along_axis(lambda x : np.array(list(line_coef(x))),1,lines)
-    
-    #corresponding length of each line-segement
-    lengths=np.apply_along_axis(lambda x:np.sqrt((x[0]-x[2])**2+(x[1]-x[3])**2),1,lines).reshape([-1,1])
-    
-    #combine the line coordinates ,coefs ,lengths into a matrix
-    lines_info=np.concatenate([lines,coefs,lengths],axis=1)
-    
-    #group lines into several clusters by their rho and theta
-    dic=cluster(lines_info)
-    dic_clusterLines={}
-    for key in dic.keys():
-        dic_clusterLines[key]=lines[dic[key]]
-    
-    base_coef_set=[PolarLine(img_hsv,key,dic[key],lines_info) for key in dic.keys()]
-    base_coef_set=sorted(base_coef_set,key=lambda x:x.len_project,reverse=True)
-    base_coef_set=base_coef_set[:n_first]
-    
-    straights=list(map(lambda x: x.base_coef,base_coef_set))
-    return straights,dic_clusterLines
-
-def card_connerPoints(img_raw):
-    pass
 
 class Quadrangle():
     def __init__(self,points,dic):
@@ -654,22 +699,27 @@ if __name__=='__main__':
     img_hsv = cv2.cvtColor(img_raw,cv2.COLOR_BGR2HSV)
     img = cv2.cvtColor(img_raw,cv2.COLOR_BGR2GRAY)
     
-    straights,dic=find_more_edge(img_raw)
+#    straights,dic=find_more_edge(img_raw)
+#    h,w,_=img_raw.shape
+#    area_img=h*w
+#    nsides_box=find_kSide_from_nLine(straights,4,[0,0,w,h])
+#    nsides_box2=list(map(lambda x:points2lineSegements(x),nsides_box))
+#    quad_box=[Quadrangle(points,dic) for points in nsides_box]       
+#    quad_box=sorted(quad_box,key=lambda x:x.ratioPerimeter,reverse=True)   
+#    quad_box=list(filter(lambda x:x.area/float(area_img)>area_ratio,quad_box))
 
-    h,w,_=img_raw.shape
-    area_img=h*w
-    nsides_box=find_kSide_from_nLine(straights,4,[0,0,w,h])
-    nsides_box2=list(map(lambda x:points2lineSegements(x),nsides_box))
- 
-    quad_box=[Quadrangle(points,dic) for points in nsides_box]
-        
-    quad_box=sorted(quad_box,key=lambda x:x.ratioPerimeter,reverse=True)
+    cornerPoints=card_connerPoints(img_raw)
+    dst_points=np.array([[0,0],[856,0],[856,540],[0,540]])
+    cornerPoints=align_points(cornerPoints,dst_points)
+    segments=points2lineSegements(cornerPoints)
     
-    quad_box=list(filter(lambda x:x.area/float(area_img)>area_ratio,quad_box))
-
-
-
     drawn_img=img_raw
-    drawn_img=render(drawn_img,quad_box[0].lineSegements,(np.random.randint(0,1),np.random.randint(100,201),np.random.randint(0,200)),5)  
+    drawn_img=render(drawn_img,segments,(np.random.randint(0,1),np.random.randint(100,201),np.random.randint(0,200)),5)  
+    for i,point in enumerate(cornerPoints):
+        drawn_img=render_point(drawn_img,point,color=(20,20,200),thick=2+i*3)
+    
     fig=plt.figure(figsize=[20,15])
     plt.imshow(drawn_img)
+    
+    img_cali=get_calibration(img_raw)
+    cv2.imwrite('ooxx.jpg',img_cali)
