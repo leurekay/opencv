@@ -13,12 +13,12 @@ from matplotlib import pyplot as plt
 from scipy.linalg import solve
 
 
-n_first=7
+n_first=8
 n_second=6
 eps_rho=20
 eps_theta=0.05
 threshold_filter=30
-
+area_ratio=1/8.0
 
 
 
@@ -92,7 +92,7 @@ def line_coef2(line):
     pass
 
 
-def points_project_onto_line(line_coef,points):
+def points_project_onto_line_0(line_coef,points):
     """
     line_coef:[rho,theta] identify a unique line
     points: shape[N,2]
@@ -107,6 +107,23 @@ def points_project_onto_line(line_coef,points):
     new_xy=np.dot(points,R.T)
     return new_xy[:,0]
 
+def points_project_onto_line(line_coef,points):
+    """
+    line_coef:[rho,theta] identify a unique line
+    points: shape[N,2]
+    
+    return :coord on 1 dim projected-axis
+    """
+    
+    points=np.array(points)
+    points=points.reshape([-1,2])
+    rho,theta=line_coef
+    alpha=theta-np.pi/2.0
+    v=np.array([np.cos(alpha),np.sin(alpha)])
+    proj=np.dot(points,v)
+    return proj
+    
+    
 
 
 
@@ -154,11 +171,13 @@ def total_project_length(line_coef,lines):
 
 
 def total_project_length_onto_linSegement(lineSegement,lines):
+    lineSegement=lineSegement.reshape([1,4])
     coef=line_coef(lineSegement)
-    base_left=points_project_onto_line(coef,line_segement[:,:2]).reshape([-1,1])
-    base_right=points_project_onto_line(coef,line_segement[:,2:]).reshape([-1,1])
+    base_left=points_project_onto_line(coef,lineSegement[:,:2]).reshape([-1,1])
+    base_right=points_project_onto_line(coef,lineSegement[:,2:]).reshape([-1,1])
     base=np.concatenate([base_left,base_right],axis=1)
-    x,y=base[0]
+    x,y=min(base[0]),max(base[0])
+    
     
     
     left=points_project_onto_line(coef,lines[:,:2]).reshape([-1,1])
@@ -443,7 +462,7 @@ def triangleArea(points):
     b=np.linalg.norm(points[1]-points[2])
     c=np.linalg.norm(points[2]-points[0])
     p=(a+b+c)/2.0
-    s=np.sqrt(a*b*c*p)
+    s=np.sqrt((p-a)*(p-b)*(p-c)*p)
     return s
 
 def get_calibration(img):
@@ -555,24 +574,33 @@ def find_more_edge(img_raw):
     
     #group lines into several clusters by their rho and theta
     dic=cluster(lines_info)
+    dic_clusterLines={}
+    for key in dic.keys():
+        dic_clusterLines[key]=lines[dic[key]]
     
     base_coef_set=[PolarLine(img_hsv,key,dic[key],lines_info) for key in dic.keys()]
     base_coef_set=sorted(base_coef_set,key=lambda x:x.len_project,reverse=True)
     base_coef_set=base_coef_set[:n_first]
     
     straights=list(map(lambda x: x.base_coef,base_coef_set))
-    return straights
+    return straights,dic_clusterLines
 
+def card_connerPoints(img_raw):
+    pass
 
 class Quadrangle():
-    def __init__(self,points):
+    def __init__(self,points,dic):
         assert points.shape[0]==4 and points.shape[1]==2
         self.n=points.shape[0]
         self.points=points
+        self.dic=dic
         self.lineSegements=points2lineSegements(points)
         self.lineSegementsLength=np.apply_along_axis(lambda x:np.linalg.norm(x[[0,1]]-x[[2,3]]),1,self.lineSegements)
+        self.perimeter=np.sum(self.lineSegementsLength)
+        self.area=self.get_area()
         self.angles=self.get_angles()
         self.ratios=self.get_ratio()
+        self.ratioPerimeter=self.subLength_perimeter()/self.perimeter
         
         self.feature=feature=np.array([x/(np.pi/2) for x in self.angles]+self.ratios)
         self.standard=standard=np.array([1.0,1.0,1.0,1.0,54/85.6,54/85.6,1.0,1.0])
@@ -599,65 +627,49 @@ class Quadrangle():
         lengths=sorted(lengths)
         return [lengths[0]/float(lengths[3]),lengths[1]/float(lengths[3]),lengths[2]/float(lengths[3]),1.0]
             
-    
+    def subLength_perimeter(self):
+        dic=self.dic
+        lines=self.lineSegements
+        coefs=np.apply_along_axis(line_coef,1,lines)
+        box=[]
+        for i in range(len(lines)):
+            lineSegement=lines[i]
+            coef=coefs[i]
+            for key in dic.keys():
+                if abs(coef[0]-key[0])<0.0001 and abs(coef[1]-key[1])<0.0001:
+                    sub_lines=dic[key]
+                    break
+            ll=total_project_length_onto_linSegement(lineSegement,sub_lines)
+            box.append(ll)
+        return sum(box)
+        
 
 
 
 
 if __name__=='__main__':
-    image_path='data/bank2.jpg'
+    image_path='data/bank5.jpg'
 
     img_raw = cv2.imread(image_path)
     img_hsv = cv2.cvtColor(img_raw,cv2.COLOR_BGR2HSV)
     img = cv2.cvtColor(img_raw,cv2.COLOR_BGR2GRAY)
     
-    lsd = cv2.createLineSegmentDetector(cv2.LSD_REFINE_NONE)
-#    dlines = lsd.detect(img)
-    lines = lsd.detect(img)[0]  # Position 0 of the returned tuple are the detected lines
-    lines=lines.reshape([-1,4])
-    
-    straights=find_more_edge(img_raw)
-
-    
-
-    
-    cc=combination(8,4)
-    pp=permutation(8,4)
-    M=crosspoint_matrix(straights)
-
-    crosspoints=M.reshape([M.shape[0]*M.shape[1],2])    
-
-
-    
+    straights,dic=find_more_edge(img_raw)
 
     h,w,_=img_raw.shape
+    area_img=h*w
     nsides_box=find_kSide_from_nLine(straights,4,[0,0,w,h])
     nsides_box2=list(map(lambda x:points2lineSegements(x),nsides_box))
-    
-    
-    quad_box=[Quadrangle(points) for points in nsides_box]
+ 
+    quad_box=[Quadrangle(points,dic) for points in nsides_box]
         
-    quad_box=sorted(quad_box,key=lambda x:x.similarity,reverse=True)
+    quad_box=sorted(quad_box,key=lambda x:x.ratioPerimeter,reverse=True)
     
-    
+    quad_box=list(filter(lambda x:x.area/float(area_img)>area_ratio,quad_box))
+
+
+
     drawn_img=img_raw
-#    for ooxx in nsides_box2:
-#        drawn_img=render(drawn_img,ooxx,(np.random.randint(0,1),np.random.randint(100,201),np.random.randint(0,200)),3)  
-    
-#    drawn_img=render(drawn_img,nsides_box2[2],(np.random.randint(0,1),np.random.randint(100,201),np.random.randint(0,200)),3)  
-    
-#    drawn_img=render(drawn_img,straights,(np.random.randint(100,101),np.random.randint(0,1),np.random.randint(199,200)),2)  
-    
-    drawn_img=render(drawn_img,quad_box[0].lineSegements,(np.random.randint(0,1),np.random.randint(100,201),np.random.randint(0,200)),3)  
-   
-    
+    drawn_img=render(drawn_img,quad_box[0].lineSegements,(np.random.randint(0,1),np.random.randint(100,201),np.random.randint(0,200)),5)  
     fig=plt.figure(figsize=[20,15])
     plt.imshow(drawn_img)
-    
-    
-    quad1=Quadrangle(nsides_box[0])
-    
-    line_segement=np.array([[10,10,40,40]])
-    lines=np.array([[5,7,20,30],[35,20,70,50]])
-    project_length=total_project_length_onto_linSegement(line_segement,lines)
-    
